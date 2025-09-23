@@ -1,0 +1,12 @@
+*.o
+*.d
+*.a
+doxygen
+solver
+test_solver
+compile_commands.json
+build
+.*
+!.gitignore
+!.github
+!.editorconfig
