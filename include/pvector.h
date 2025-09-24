@@ -20,7 +20,7 @@ struct pvector {
 	size_t len;
 	size_t el_size;
 
-	pvector_el_destructor_t destructor;
+	pvector_el_destructor_t element_destructor;
 
 	PVECTOR_ONDEBUG(
 		struct ds_debug _debug_info;
@@ -49,11 +49,12 @@ DSError_t pvector_set_debug_info(struct pvector *pv,
 		pvector_spec_debug(varName, el_size);			\
 	} while (0)
 
-DSError_t pvector_verify(struct pvector *pv);
+DSError_t pvector_verify(const struct pvector *pv);
 	
 DSError_t pvector_dump(struct pvector *pv, FILE *stream);
 
-DSError_t pvector_set_destructor(struct pvector *pv, pvector_el_destructor_t destructor);
+DSError_t pvector_set_element_destructor(struct pvector *pv, 
+					 pvector_el_destructor_t destructor);
 
 DSError_t pvector_set_capacity(struct pvector *pv, size_t new_cap);
 

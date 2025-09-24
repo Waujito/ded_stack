@@ -9,10 +9,16 @@ TEST(PVector, PvectorDumps) {
 
 	pvector_dump(&pv, stderr);
 	int a = 0xffeedd;
-	pvector_push_back(&pv, &a);
+	ASSERT_EQ((int) pvector_push_back(&pv, &a), 0);
+	pv.arr[5] = 0xdd;
 	printf("\n");
 
 	pvector_dump(&pv, stderr);
+	ASSERT_EQ((int) pvector_pop_back(&pv), (int) DS_POISONED);
+	pv.arr[5] = 0xca;
+	ASSERT_EQ((int) pvector_pop_back(&pv), (int) 0);
+	pvector_dump(&pv, stderr);
+	ASSERT_EQ((int) pvector_verify(&pv), 0);
 
 	pvector_destroy(&pv);
 }

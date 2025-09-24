@@ -24,7 +24,7 @@ int fprint_DSError(FILE *stream, DSError_t derror) {
 	LOG_DS_ERROR_(DS_ALLOCATION,		"Allocation Error");
 	LOG_DS_ERROR_(DS_INVALID_ARG,		"Invalid Argument");
 	LOG_DS_ERROR_(DS_INVALID_STATE,		"Invalid State");
-	LOG_DS_ERROR_(DS_POISONED,		"Poison Value Reached");
+	LOG_DS_ERROR_(DS_POISONED,		"Poisoned Storage");
 	LOG_DS_ERROR_(DS_STRUCT_CORRUPT,	"Structure Corrupted");
 	LOG_DS_ERROR_(DS_INVALID_POINTER,	"Invalid Pointer");
 

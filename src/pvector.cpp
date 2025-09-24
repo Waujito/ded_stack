@@ -7,6 +7,22 @@
 
 #ifdef PVECTOR_DEBUG
 const static unsigned char PVECTOR_DEBUG_POISON = 0xca;
+
+#define PVECTOR_VERIFY(pv)				\
+	(pvector_verify(pv))
+#define PVECTOR_VERIFY_AND_RETURN(pv)			\
+do {							\
+	DSError_t error = PVECTOR_VERIFY(pv);		\
+	if (error) {					\
+		return error;				\
+	}						\
+} while (0)
+#else /* PVECTOR_DEBUG */
+
+#define PVECTOR_VERIFY(...) (0)
+
+#define PVECTOR_VERIFY_AND_RETURN(...) (void)0
+
 #endif /* PVECTOR_DEBUG */
 
 DSError_t pvector_init(struct pvector *pv, size_t el_size) {
@@ -18,7 +34,7 @@ DSError_t pvector_init(struct pvector *pv, size_t el_size) {
 	pv->capacity = 0;
 	pv->len = 0;
 
-	pv->destructor = NULL;
+	pv->element_destructor = NULL;
 
 	PVECTOR_ONDEBUG(
 		pv->_debug_info = (struct ds_debug){0};
@@ -41,16 +57,17 @@ DSError_t pvector_set_debug_info(struct pvector *pv,
 	return DS_OK;
 }
 
-DSError_t pvector_set_destructor(struct pvector *pv, pvector_el_destructor_t destructor) {
+DSError_t pvector_set_element_destructor(struct pvector *pv, pvector_el_destructor_t destructor) {
 	assert (pv);
 
-	pv->destructor = destructor;
+	pv->element_destructor = destructor;
 
 	return DS_OK;
 }
 
 DSError_t pvector_set_capacity(struct pvector *pv, size_t new_cap) {
 	assert (pv);
+	PVECTOR_VERIFY_AND_RETURN(pv);
 
 	if (new_cap < pv->len) {
 		return DS_INVALID_ARG;
@@ -86,14 +103,12 @@ DSError_t pvector_set_capacity(struct pvector *pv, size_t new_cap) {
 
 DSError_t pvector_destroy(struct pvector *pv) {
 	assert (pv);
+	// Should I do something to free the pointer when verification fails?
+	PVECTOR_VERIFY_AND_RETURN(pv);
 
-	if (!pv) {
-		return DS_OK;
-	}
-
-	if (pv->destructor) {
+	if (pv->element_destructor) {
 		for (size_t i = 0; i < pv->len; i++) {
-			pv->destructor(pv->arr + i * pv->el_size);
+			pv->element_destructor(pv->arr + i * pv->el_size);
 		}
 	}
 
@@ -108,6 +123,7 @@ DSError_t pvector_destroy(struct pvector *pv) {
 DSError_t pvector_clone(struct pvector *npv, const struct pvector *pv) {
 	assert (npv);
 	assert (pv);
+	PVECTOR_VERIFY_AND_RETURN(pv);
 
 	char *arr = (char *)calloc(pv->len * pv->el_size, sizeof(char));
 	if (!arr) {
@@ -127,6 +143,7 @@ DSError_t pvector_clone(struct pvector *npv, const struct pvector *pv) {
 DSError_t pvector_push_back(struct pvector *pv, void *ptr) {
 	assert (pv);
 	assert (ptr);
+	PVECTOR_VERIFY_AND_RETURN(pv);
 
 	DSError_t ret = DS_OK;
 
@@ -146,15 +163,21 @@ DSError_t pvector_push_back(struct pvector *pv, void *ptr) {
 
 DSError_t pvector_pop_back(struct pvector *pv) {
 	assert (pv);
+	PVECTOR_VERIFY_AND_RETURN(pv);
 
 	if (pv->len == 0) {
 		return DS_INVALID_STATE;
 	}
 
 	pv->len--;
-	if (pv->destructor) {
+
+#ifdef PVECTOR_DEBUG
+	memset(pv->arr + pv->len * pv->el_size, PVECTOR_DEBUG_POISON, pv->el_size);
+#endif
+
+	if (pv->element_destructor) {
 		char *el_ptr = pv->arr + pv->len * pv->el_size;
-		pv->destructor(el_ptr);
+		pv->element_destructor(el_ptr);
 	}
 
 	if (pv->len <= pv->capacity / 4) {
@@ -170,12 +193,19 @@ DSError_t pvector_pop_back(struct pvector *pv) {
 
 int pvector_has(const struct pvector *pv, size_t idx) {
 	assert (pv);
+	if (PVECTOR_VERIFY(pv)) {
+		return 0;
+	}
 
 	return idx < pv->len;
 }
 
 void *pvector_get(const struct pvector *pv, size_t idx) {
 	assert (pv);
+
+	if (PVECTOR_VERIFY(pv)) {
+		return NULL;
+	}
 
 	if (idx >= pv->len) {
 		return NULL;
@@ -185,7 +215,7 @@ void *pvector_get(const struct pvector *pv, size_t idx) {
 }
 
 
-DSError_t pvector_verify(struct pvector *pv) {
+DSError_t pvector_verify(const struct pvector *pv) {
 	assert (pv);
 	DSError_t error = DS_OK;
 
@@ -208,8 +238,9 @@ DSError_t pvector_verify(struct pvector *pv) {
 	// Condition for poison verification
 	if (!(error & (DS_STRUCT_CORRUPT | DS_INVALID_POINTER))) {
 		for (size_t i = 0; i < pv->len; i++) {
-			unsigned char *el = (unsigned char *) pv->arr + 
-						i * pv->el_size;
+			const unsigned char *el = 
+				(const unsigned char *) pv->arr + i * pv->el_size;
+
 			int is_poisonous = 1;
 
 			for (size_t j = 0; j < pv->el_size; j++) {
@@ -272,9 +303,9 @@ DSError_t pvector_dump(struct pvector *pv, FILE *stream) {
 
 	fprintf(stream, "\t{\n");
 	fprintf(stream, "\t\tcapacity\t= <%zu>;\n",	pv->capacity);
-	fprintf(stream, "\t\tlen\t\t= <%zu>;\n",		pv->len);
+	fprintf(stream, "\t\tlen\t\t= <%zu>;\n",	pv->len);
 	fprintf(stream, "\t\tel_size\t\t= <%zu>;\n",	pv->el_size);
-	fprintf(stream, "\t\t*destructor\t= [%p];\n",	pv->destructor);
+	fprintf(stream, "\t\t*element_destructor\t= [%p];\n",	pv->element_destructor);
 	fprintf(stream, "\n");
 	fprintf(stream, "\t\t*arr\t\t= [%p];\n",		pv->arr);
 	fprintf(stream, "\t}\n");
