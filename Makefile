@@ -9,9 +9,9 @@ FLAGS := $(CXXFLAGS)
 LDFLAGS := -lm
 
 # Uncomment next two lines for C compiler
-# OBJCFLAGS := -xc -std=c11
-# FLAGS := $(CFLAGS)
-# CXX := $(CC)
+OBJCFLAGS := -xc -std=c11
+FLAGS := $(CFLAGS)
+CXX := $(CC)
 
 ifdef USE_GTEST
 override CFLAGS += -DUSE_GTEST
@@ -23,7 +23,7 @@ export CXX CFLAGS
 
 BUILD_DIR := build
 
-LIBSRC := src/pvector.cpp src/gdb_assertions.cpp
+LIBSRC := src/pvector.cpp src/gdb_assertions.cpp src/data_structure.cpp
 LIBOBJ := $(LIBSRC:%.cpp=$(BUILD_DIR)/%.o)
 STATIC_LIB := $(BUILD_DIR)/stack_lib.a
 

@@ -77,7 +77,7 @@ void tm_t_assert_fail_exit(void) {
 static double millis_diff (struct timespec end_time, struct timespec start_time) {
 	double sec_diff = (double)(end_time.tv_sec - start_time.tv_sec);
 	double nsec_diff = (double)(end_time.tv_nsec - start_time.tv_nsec);
-	double millisec_diff = sec_diff * 1'000 + nsec_diff / 1'000'000;
+	double millisec_diff = sec_diff * 1000 + nsec_diff / 1000000;
 
 	return millisec_diff;
 }

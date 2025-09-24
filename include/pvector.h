@@ -3,13 +3,7 @@
 
 #include <stdlib.h>
 #include "types.h"
-
-typedef enum DSError {
-	DS_OK			= 0,
-	DS_ALLOCATION		= 1 << 0,
-	DS_INVALID_ARG		= 1 << 1,
-	DS_INVALID_STATE	= 1 << 2,
-} DSError_t;
+#include "data_structure.h"
 
 #define PVECTOR_DEBUG
 
@@ -18,41 +12,6 @@ typedef enum DSError {
 #else /* PVECTOR_DEBUG */
 	#define PVECTOR_ONDEBUG(...)
 #endif /* PVECTOR_DEBUG */
-
-struct ds_debug {
-	/* nullable */
-	const char *var_name;
-
-	/* nullable */
-	void *var_ptr;
-
-	/* nullable */
-	const char *filename;
-
-	/* if null = 0 */
-	int line;
-
-	/* nullable */
-	const char *func_name;
-};
-
-#define GET_DS_DEBUG(varName)						\
-	((struct ds_debug) {						\
-		.var_name	= #varName,				\
-		.var_ptr	= &varName,				\
-		.filename	= __FILE__,				\
-		.line		= __LINE__,				\
-		.func_name	= _CT_FUNC_NAME				\
-	})
-
-#define PRINT_DS_DEBUG(ds_debug, line_pref)				\
-	printf(								\
-		line_pref "Created as &(%s) = [%p]\n"			\
-		line_pref "Created at %s:%s():%d\n",			\
-		(ds_debug).var_name, (ds_debug).var_ptr,		\
-		(ds_debug).filename, (ds_debug).func_name,		\
-			(ds_debug).line					\
-	)
 
 typedef void (*pvector_el_destructor_t)(void *);
 struct pvector {
@@ -80,16 +39,19 @@ DSError_t pvector_set_debug_info(struct pvector *pv,
 	pvector_set_debug_info(&varName, GET_DS_DEBUG(varName),		\
 				#el_size)
 #else /* PVECTOR_DEBUG */
-#define pvector_spec_debug(varName, el_size) _CT_REQUIRE_SEMICOLON 
+#define pvector_spec_debug(varName, el_size) (void)0
 #endif /* PVECTOR_DEBUG */
 
-#define pvector_create(varName, el_size)				\
+#define PVECTOR_CREATE(varName, el_size)				\
 	struct pvector varName = {0};					\
-	pvector_init(&varName, el_size);				\
-	pvector_spec_debug(varName, el_size);				\
-	_CT_REQUIRE_SEMICOLON
+	do {								\
+		pvector_init(&varName, el_size);			\
+		pvector_spec_debug(varName, el_size);			\
+	} while (0)
+
+DSError_t pvector_verify(struct pvector *pv);
 	
-DSError_t pvector_dump(struct pvector *pv);
+DSError_t pvector_dump(struct pvector *pv, FILE *stream);
 
 DSError_t pvector_set_destructor(struct pvector *pv, pvector_el_destructor_t destructor);
 
