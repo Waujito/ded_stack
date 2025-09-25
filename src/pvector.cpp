@@ -9,8 +9,15 @@
 const static uint32_t PVECTOR_CANARY = 0xcbdaeffe;
 
 #ifdef PVECTOR_DEBUG
-const static unsigned char PVECTOR_DEBUG_POISON = 0xca;
+#define PVECTOR_POISONING
+#endif
 
+#ifdef PVECTOR_POISONING
+const static unsigned char PVECTOR_DEBUG_POISON = 0xca;
+#endif /* PVECTOR_POISONING */
+
+
+#ifdef PVECTOR_DEBUG
 #define PVECTOR_VERIFY(pv)				\
 	(pvector_verify(pv))
 #define PVECTOR_VERIFY_AND_RETURN(pv)			\
@@ -80,10 +87,10 @@ static inline char *pvector_real_ptr(struct pvector *pv) {
 
 /**
  * Adds the canaries for pvector.
- * Note that it works out of bounds of the array in vector:
+ * Note that it works out of bounds of the pvector->arr:
  * _CANARY_ (pv->arr + pv->capacity) _CANARY_
  */
-static inline void pvector_set_canaries(struct pvector *pv) {
+static void pvector_set_canaries(struct pvector *pv) {
 	assert(pv);
 
 	char *real_ptr = pvector_real_ptr(pv);
@@ -123,14 +130,14 @@ DSError_t pvector_set_capacity(struct pvector *pv, size_t new_capacity) {
 
 	pvector_set_canaries(pv);
 
-#ifdef PVECTOR_DEBUG
+#ifdef PVECTOR_POISONING
 	if (old_capacity < new_capacity) {
 		memset(pv->arr + old_capacity * pv->el_size,
 			PVECTOR_DEBUG_POISON,
 			(new_capacity - old_capacity) * pv->el_size
 		);
 	}
-#endif /* PVECTOR_DEBUG */
+#endif /* PVECTOR_POISONING */
 
 	return DS_OK;
 }
@@ -177,10 +184,58 @@ DSError_t pvector_clone(struct pvector *npv, const struct pvector *pv) {
 	return DS_OK;
 }
 
+int pvector_has(const struct pvector *pv, size_t idx) {
+	assert (pv);
+	if (PVECTOR_VERIFY(pv)) {
+		return 0;
+	}
+
+	return idx < pv->len;
+}
+
+void *pvector_get(const struct pvector *pv, size_t idx) {
+	assert (pv);
+
+	if (PVECTOR_VERIFY(pv)) {
+		return NULL;
+	}
+
+	if (idx >= pv->len) {
+		return NULL;
+	}
+
+	return pv->arr + idx * pv->el_size;
+}
+
+#ifdef PVECTOR_POISONING
+static int pvector_el_is_poisonous(const struct pvector *pv, const char *ptr) {
+	assert (pv);
+	assert (ptr);
+
+	int is_poisonous = 1;
+	for (size_t j = 0; j < pv->el_size; j++) {
+		if ((unsigned char) ptr[j] != PVECTOR_DEBUG_POISON) {
+			is_poisonous = 0;
+		}
+	}
+
+	return is_poisonous;
+}
+#endif /* PVECTOR_DEBUG */
+
+
 DSError_t pvector_push_back(struct pvector *pv, void *ptr) {
 	assert (pv);
 	assert (ptr);
 	PVECTOR_VERIFY_AND_RETURN(pv);
+
+	// Do not include poisonous elements
+#ifdef PVECTOR_POISONING
+	if (pvector_el_is_poisonous(pv, (char *)ptr)) {
+		return DS_POISONED;
+	}
+#endif
+
 
 	DSError_t ret = DS_OK;
 
@@ -208,9 +263,9 @@ DSError_t pvector_pop_back(struct pvector *pv) {
 
 	pv->len--;
 
-#ifdef PVECTOR_DEBUG
+#ifdef PVECTOR_POISONING
 	memset(pv->arr + pv->len * pv->el_size, PVECTOR_DEBUG_POISON, pv->el_size);
-#endif
+#endif /* PVECTOR_POISONING */
 
 	if (pv->element_destructor) {
 		char *el_ptr = pv->arr + pv->len * pv->el_size;
@@ -227,30 +282,6 @@ DSError_t pvector_pop_back(struct pvector *pv) {
 
 	return DS_OK;
 }
-
-int pvector_has(const struct pvector *pv, size_t idx) {
-	assert (pv);
-	if (PVECTOR_VERIFY(pv)) {
-		return 0;
-	}
-
-	return idx < pv->len;
-}
-
-void *pvector_get(const struct pvector *pv, size_t idx) {
-	assert (pv);
-
-	if (PVECTOR_VERIFY(pv)) {
-		return NULL;
-	}
-
-	if (idx >= pv->len) {
-		return NULL;
-	}
-
-	return pv->arr + idx * pv->el_size;
-}
-
 
 DSError_t pvector_verify(const struct pvector *pv) {
 	assert (pv);
@@ -283,22 +314,14 @@ DSError_t pvector_verify(const struct pvector *pv) {
 		}
 	}
 
-#ifdef PVECTOR_DEBUG
-	// Condition for poison verification
+	// Conditions for poison verification
+#ifdef PVECTOR_POISONING
 	if (!(error & (DS_STRUCT_CORRUPT | DS_INVALID_POINTER))) {
 		for (size_t i = 0; i < pv->len; i++) {
 			const unsigned char *el = 
 				(const unsigned char *) pv->arr + i * pv->el_size;
 
-			int is_poisonous = 1;
-
-			for (size_t j = 0; j < pv->el_size; j++) {
-				if (el[j] != PVECTOR_DEBUG_POISON) {
-					is_poisonous = 0;
-				};
-			}
-
-			if (is_poisonous) {
+			if (pvector_el_is_poisonous(pv, (const char *)el)) {
 				error |= DS_POISONED;
 				break;
 			}
@@ -315,12 +338,34 @@ DSError_t pvector_verify(const struct pvector *pv) {
 			}
 		}
 	}
-#endif /* PVECTOR_DEBUG */
+#endif /* PVECTOR_POISONING */
 
 	return error;
 }
 
 const size_t PVECTOR_DUMP_CONTENT_MAXLEN = 16;
+
+static DSError_t pvector_dump_canary(FILE *stream, const unsigned char *canary_ptr) {
+	const unsigned char *real_canary_ptr = 
+		(const unsigned char *)(&PVECTOR_CANARY);
+
+	int canary_pass = 1;
+	for (size_t j = 0; j < sizeof(PVECTOR_CANARY); j++) {
+		if (canary_ptr[j] != real_canary_ptr[j]) {
+			canary_pass = 0;
+		}
+
+		fprintf(stream, " %02x", canary_ptr[j]);
+	}
+
+	fprintf(stream, ";");
+	if (!canary_pass) {
+		fprintf(stream, " (CORRUPTED)");
+	}
+	fprintf(stream, "\n");
+
+	return 0;
+}
 
 DSError_t pvector_dump(struct pvector *pv, FILE *stream) {
 	assert(stream);
@@ -377,51 +422,34 @@ DSError_t pvector_dump(struct pvector *pv, FILE *stream) {
 	char *real_ptr = pvector_real_ptr(pv);
 	if (real_ptr) {
 		fprintf(stream, "\t[BCANARY]\t=");
-		unsigned char *canary_ptr = (unsigned char *)real_ptr;
-		const unsigned char *real_canary_ptr = 
-			(const unsigned char *)(&PVECTOR_CANARY);
-
-		int canary_pass = 1;
-		for (size_t j = 0; j < sizeof(PVECTOR_CANARY); j++) {
-			if (canary_ptr[j] != real_canary_ptr[j]) {
-				canary_pass = 0;
-			}
-
-			fprintf(stream, " %02x", canary_ptr[j]);
-		}
-
-		fprintf(stream, ";");
-		if (!canary_pass) {
-			fprintf(stream, " (CORRUPTED)");
-		}
-		fprintf(stream, "\n");
+		pvector_dump_canary(stream, (unsigned char *)real_ptr);
 	}
 
 	for (size_t i = 0; i < contents_len; i++) {
 		fprintf(stream, "\t\t*[%zu]\t=", i);
 		unsigned char *el = (unsigned char *)pv->arr + i * pv->el_size;
 
-		PVECTOR_ONDEBUG(
+#ifdef PVECTOR_POISONING 
 			int is_poisonous = 1;
-		);
+#endif /* PVECTOR_POISONING  */
 
 		for (size_t j = 0; j < pv->el_size; j++) {
-			PVECTOR_ONDEBUG(
+#ifdef PVECTOR_POISONING 
 				if (el[j] != PVECTOR_DEBUG_POISON) {
 					is_poisonous = 0;
 				}
-			);
+#endif /* PVECTOR_POISONING  */
 
 			fprintf(stream, " %02x", el[j]);
 		}
 
 		fprintf(stream, ";");
 
-		PVECTOR_ONDEBUG(
+#ifdef PVECTOR_POISONING 
 			if (is_poisonous) {
 				fprintf(stream, " (POISON)");
 			}
-		);
+#endif /* PVECTOR_POISONING  */
 
 		fprintf(stream, "\n");
 	}
@@ -432,25 +460,8 @@ DSError_t pvector_dump(struct pvector *pv, FILE *stream) {
 
 	if (real_ptr) {
 		fprintf(stream, "\t[ECANARY]\t=");
-		unsigned char *canary_ptr = (unsigned char *)real_ptr + 
-			sizeof(PVECTOR_CANARY) + pv->capacity * pv->el_size;
-		const unsigned char *real_canary_ptr = 
-			(const unsigned char *)(&PVECTOR_CANARY);
-
-		int canary_pass = 1;
-		for (size_t j = 0; j < sizeof(PVECTOR_CANARY); j++) {
-			if (canary_ptr[j] != real_canary_ptr[j]) {
-				canary_pass = 0;
-			}
-
-			fprintf(stream, " %02x", canary_ptr[j]);
-		}
-
-		fprintf(stream, ";");
-		if (!canary_pass) {
-			fprintf(stream, " (CORRUPTED)");
-		}
-		fprintf(stream, "\n");
+		pvector_dump_canary(stream, (unsigned char *)real_ptr + 
+			sizeof(PVECTOR_CANARY) + pv->capacity * pv->el_size);
 	}
 
 	fprintf(stream, "\t}\n");
