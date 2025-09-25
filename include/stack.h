@@ -65,10 +65,10 @@ static DSError_t stack_destroy(struct stack *stk) {
 	return pvector_destroy(&stk->pv);
 }
 
-static DSError_t stack_push(struct stack *stk, stack_dtype *el) {
+static DSError_t stack_push(struct stack *stk, stack_dtype el) {
 	assert (stk);
 
-	return pvector_push_back(&stk->pv, el);
+	return pvector_push_back(&stk->pv, &el);
 }
 
 static DSError_t stack_pop(struct stack *stk) {
@@ -83,14 +83,14 @@ static DSError_t stack_verify(struct stack *stk) {
 	return pvector_verify(&stk->pv);
 }
 
-static stack_dtype *stack_head(struct stack *stk) {
+static stack_dtype stack_head(struct stack *stk) {
 	assert (stk);
 
 	if (stk->pv.len == 0) {
-		return NULL;
+		return 0;
 	}
 
-	return (stack_dtype *)pvector_get(&stk->pv, stk->pv.len - 1);
+	return *(stack_dtype *)pvector_get(&stk->pv, stk->pv.len - 1);
 }
 
 #ifdef STACK_DEBUG
@@ -134,5 +134,9 @@ static DSError_t stack_dump(struct stack *stk, FILE *stream) {
 
 	return DS_OK;
 }
+
+#define STACK_DUMP(stk, stream)						\
+	DS_DUMP_CALLEE_REPORT(stream);					\
+	stack_dump(stk, stream);
 
 #endif /* STACK_H */

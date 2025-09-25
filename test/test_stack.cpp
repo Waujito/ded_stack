@@ -6,17 +6,17 @@
 
 TEST(Stack, StackDumps) {
 	STACK_CREATE(stk);
-	stack_dump(&stk, stderr);
+	STACK_DUMP(&stk, stderr);
 	
 	int asfd = 0x11eedd11;
-	stack_push(&stk, &asfd);
+	stack_push(&stk, asfd);
 
-	stack_dump(&stk, stderr);
+	STACK_DUMP(&stk, stderr);
 	stack_destroy(&stk);
 }
 
 TEST(Stack, StackDumpRaw) {
 	struct stack stk = {{0}};
 	stack_init(&stk);
-	stack_dump(&stk, stderr);
+	STACK_DUMP(&stk, stderr);
 }

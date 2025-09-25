@@ -53,6 +53,10 @@ DSError_t pvector_verify(const struct pvector *pv);
 	
 DSError_t pvector_dump(struct pvector *pv, FILE *stream);
 
+#define PVECTOR_DUMP(pv, stream)					\
+	DS_DUMP_CALLEE_REPORT(stream);					\
+	pvector_dump(pv, stream);
+
 DSError_t pvector_set_element_destructor(struct pvector *pv, 
 					 pvector_el_destructor_t destructor);
 

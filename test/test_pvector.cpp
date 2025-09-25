@@ -13,10 +13,10 @@ TEST(PVector, PvectorDumps) {
 	pv.arr[5] = 0xdd;
 	printf("\n");
 
-	pvector_dump(&pv, stderr);
+	PVECTOR_DUMP(&pv, stderr);
 	ASSERT_EQ((int) pvector_pop_back(&pv), (int) DS_POISONED);
 	pv.arr[5] = 0xca;
-	ASSERT_EQ((int) pvector_pop_back(&pv), (int) 0);
+	ASSERT_EQ((int) pvector_pop_back(&pv), 0);
 	pvector_dump(&pv, stderr);
 	ASSERT_EQ((int) pvector_verify(&pv), 0);
 

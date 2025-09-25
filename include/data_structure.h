@@ -36,11 +36,16 @@ struct ds_debug {
 #define FPRINT_DS_DEBUG(stream, ds_debug, line_pref)			\
 	fprintf(stream,							\
 		line_pref "Created as &(%s) = [%p]\n"			\
-		line_pref "Created at %s:%s():%d\n",			\
+		line_pref "Created at %s:%d:%s()\n",			\
 		(ds_debug).var_name, (ds_debug).var_ptr,		\
-		(ds_debug).filename, (ds_debug).func_name,		\
-			(ds_debug).line					\
+		(ds_debug).filename, (ds_debug).line,			\
+		(ds_debug).func_name					\
 	)
+
+#define DS_DUMP_CALLEE_REPORT(stream)					\
+	fprintf(stream, "Data Structure Dump called at\n");		\
+	fprintf(stream, "%s:%d:%s()\n", __FILE__, __LINE__,		\
+			_CT_FUNC_NAME);
 
 // ======================================================
 // Error handling
