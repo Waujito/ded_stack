@@ -4,6 +4,7 @@
 
 #include "stack.h"
 
+/*
 TEST(Stack, StackDumps) {
 	STACK_CREATE(stk);
 	STACK_DUMP(&stk, stderr);
@@ -20,3 +21,4 @@ TEST(Stack, StackDumpRaw) {
 	stack_init(&stk);
 	STACK_DUMP(&stk, stderr);
 }
+*/

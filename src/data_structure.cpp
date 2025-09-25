@@ -27,13 +27,14 @@ int fprint_DSError(FILE *stream, DSError_t derror) {
 	LOG_DS_ERROR_(DS_POISONED,		"Poisoned Storage");
 	LOG_DS_ERROR_(DS_STRUCT_CORRUPT,	"Structure Corrupted");
 	LOG_DS_ERROR_(DS_INVALID_POINTER,	"Invalid Pointer");
+	LOG_DS_ERROR_(DS_CANARY_CORRUPT,	"The Canary Corrupted");
 
 	#undef LOG_DS_ERROR_
 
 	fprintf(stream, "]");
 
 	if (err_ct) {
-		fprintf(stream, "+<Unlisted error value: %x>", err_ct);
+		fprintf(stream, "+<Unlisted error value: 0x%x>", err_ct);
 	}
 
 
