@@ -9,6 +9,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdint.h>
 
 
 #ifndef TEST_MACHINE_COLORS_H
@@ -120,6 +121,10 @@ static inline int tm_t_is_eq_int(int pred, int target) {
 	return pred == target;
 }
 
+static inline int tm_t_is_eq_uint32_t(uint32_t pred, uint32_t target) {
+	return pred == target;
+}
+
 static inline int tm_t_is_eq_double(double pred, double target) {
 	return tm_t_is_zero(pred - target);
 }
@@ -129,6 +134,7 @@ static inline int tm_t_is_eq_double(double pred, double target) {
  */
 
 static const char tm_t_int_fmt[]	= "%d";
+static const char tm_t_uint32_t_fmt[]	= "%u";
 static const char tm_t_double_fmt[]	= "%lg";
 
 /**
@@ -212,6 +218,9 @@ static void tm_t_assert_fail_log(T pred, T target,
 
 #define ASSERT_EQ(pred, target) 	\
 	TM_T_EQUAL_ASSERTION(pred, target, tm_t_is_eq_int, 	tm_t_int_fmt);
+
+#define ASSERT_UINT32_T_EQ(pred, target) 	\
+	TM_T_EQUAL_ASSERTION(pred, target, tm_t_is_eq_uint32_t, tm_t_uint32_t_fmt);
 
 #define ASSERT_DOUBLE_EQ(pred, target)	\
 	TM_T_EQUAL_ASSERTION(pred, target, tm_t_is_eq_double, 	tm_t_double_fmt);

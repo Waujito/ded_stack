@@ -4,17 +4,31 @@
 #include <string.h>
 #include <stdint.h>
 
+#include "hash.h"
+
 #include "pvector.h"
 
-const static uint32_t PVECTOR_CANARY = 0xcbdaeffe;
+static const size_t PVECTOR_INIT_CAPACITY = 128;
+
+// 64 bit for 8-byte alignment
+// SHOULD NOT be used directly in operations because of alignment.
+// Use memcpy and memcmp instead.
+static const uint64_t PVECTOR_CANARY = 0xcbdaeffe00;
 
 #ifdef PVECTOR_DEBUG
 #define PVECTOR_POISONING
+#define PVECTOR_DEBUG_LOGGING
 #endif
 
 #ifdef PVECTOR_POISONING
-const static unsigned char PVECTOR_DEBUG_POISON = 0xca;
+static const unsigned char PVECTOR_DEBUG_POISON = 0xca;
 #endif /* PVECTOR_POISONING */
+
+#ifdef PVECTOR_DEBUG_LOGGING
+#define pv_log_debug(...) eprintf("[DEBUG] " __VA_ARGS__)
+#else
+#define pv_log_debug(...) (void)0
+#endif /* PVECTOR_DEBUG_LOGGING */
 
 
 #ifdef PVECTOR_DEBUG
@@ -35,6 +49,20 @@ do {							\
 
 #endif /* PVECTOR_DEBUG */
 
+static inline uint32_t pvector_rehash(struct pvector *pv) {
+	pv->struct_hash = 0;
+	uint32_t hash = hash_crc32((const uint8_t *)pv, sizeof(struct pvector));
+	pv->struct_hash = hash;
+
+	return hash;
+}
+static int pvector_hash_validate(const struct pvector *pv) {
+	struct pvector npv = *pv;
+	pvector_rehash(&npv);
+
+	return pv->struct_hash == npv.struct_hash;
+}
+
 DSError_t pvector_init(struct pvector *pv, size_t el_size) {
 	assert (pv);
 	assert (el_size && "el_size MUST NOT be zero");
@@ -50,6 +78,7 @@ DSError_t pvector_init(struct pvector *pv, size_t el_size) {
 		pv->_debug_info = (struct ds_debug){0};
 	)
 
+	pvector_rehash(pv);
 	return DS_OK;
 }
 
@@ -64,6 +93,7 @@ DSError_t pvector_set_debug_info(struct pvector *pv,
 		pv->el_size_name = el_size_name;
 	)
 
+	pvector_rehash(pv);
 	return DS_OK;
 }
 
@@ -72,6 +102,7 @@ DSError_t pvector_set_element_destructor(struct pvector *pv, pvector_el_destruct
 
 	pv->element_destructor = destructor;
 
+	pvector_rehash(pv);
 	return DS_OK;
 }
 
@@ -112,10 +143,11 @@ DSError_t pvector_set_capacity(struct pvector *pv, size_t new_capacity) {
 	}
 
 	if (new_capacity == 0) {
-		static const size_t PVECTOR_INIT_CAPACITY = 128;
 		new_capacity = PVECTOR_INIT_CAPACITY;
 	}
 
+	pv_log_debug("Setting capacity %zu for vector of len %zu\n", 
+		new_capacity, pv->len);
 
 	char *new_arr = (char *)realloc(pvector_real_ptr(pv), 
 		new_capacity * pv->el_size + 2 * sizeof(PVECTOR_CANARY));
@@ -139,6 +171,7 @@ DSError_t pvector_set_capacity(struct pvector *pv, size_t new_capacity) {
 	}
 #endif /* PVECTOR_POISONING */
 
+	pvector_rehash(pv);
 	return DS_OK;
 }
 
@@ -157,7 +190,9 @@ DSError_t pvector_destroy(struct pvector *pv) {
 	pv->arr = NULL;
 	pv->capacity = 0;
 	pv->len = 0;
+	pv->element_destructor = NULL;
 
+	pvector_rehash(pv);
 	return DS_OK;
 }
 
@@ -181,6 +216,7 @@ DSError_t pvector_clone(struct pvector *npv, const struct pvector *pv) {
 
 	memcpy(npv->arr, pv->arr, pv->len * pv->el_size);
 
+	pvector_rehash(npv);
 	return DS_OK;
 }
 
@@ -236,7 +272,6 @@ DSError_t pvector_push_back(struct pvector *pv, void *ptr) {
 	}
 #endif
 
-
 	DSError_t ret = DS_OK;
 
 	if (pv->len >= pv->capacity) {
@@ -250,6 +285,7 @@ DSError_t pvector_push_back(struct pvector *pv, void *ptr) {
 	char *el_pos = pv->arr + idx * pv->el_size;
 	memcpy(el_pos, ptr, pv->el_size);
 
+	pvector_rehash(pv);
 	return DS_OK;
 }
 
@@ -272,7 +308,8 @@ DSError_t pvector_pop_back(struct pvector *pv) {
 		pv->element_destructor(el_ptr);
 	}
 
-	if (pv->len <= pv->capacity / 4) {
+	pvector_rehash(pv);
+	if (pv->len < pv->capacity / 4 && pv->len > PVECTOR_INIT_CAPACITY) {
 		DSError_t ret = pvector_set_capacity(pv, pv->len);
 
 		if (ret) {
@@ -280,6 +317,7 @@ DSError_t pvector_pop_back(struct pvector *pv) {
 		}
 	}
 
+	pvector_rehash(pv);
 	return DS_OK;
 }
 
@@ -288,6 +326,11 @@ DSError_t pvector_verify(const struct pvector *pv) {
 	DSError_t error = DS_OK;
 
 	size_t last_bit_pos = sizeof(size_t) * 8 - 2;
+
+	if (!pvector_hash_validate(pv)) {
+		error |= DS_STRUCT_CORRUPT;
+	}
+
 	if (pv->capacity >> last_bit_pos) {
 		error |= DS_STRUCT_CORRUPT;
 	}
@@ -318,21 +361,19 @@ DSError_t pvector_verify(const struct pvector *pv) {
 #ifdef PVECTOR_POISONING
 	if (!(error & (DS_STRUCT_CORRUPT | DS_INVALID_POINTER))) {
 		for (size_t i = 0; i < pv->len; i++) {
-			const unsigned char *el = 
-				(const unsigned char *) pv->arr + i * pv->el_size;
+			const char *el = 
+				(const char *) pv->arr + i * pv->el_size;
 
-			if (pvector_el_is_poisonous(pv, (const char *)el)) {
+			if (pvector_el_is_poisonous(pv, el)) {
 				error |= DS_POISONED;
 				break;
 			}
 		}
 
-		for (size_t i = pv->len * pv->el_size; 
-			i < pv->capacity * pv->el_size; i++) {
-
-			if ((unsigned char) pv->arr[i] != 
-				PVECTOR_DEBUG_POISON) {
-
+		for (size_t i = pv->len; i < pv->capacity; i++) {
+			const char *el = 
+				(const char *) pv->arr + i * pv->el_size;
+			if (!pvector_el_is_poisonous(pv, el)) {
 				error |= DS_POISONED;
 				break;
 			}

@@ -2,6 +2,8 @@
 #define PVECTOR_H
 
 #include <stdlib.h>
+#include <stdint.h>
+
 #include "types.h"
 #include "data_structure.h"
 
@@ -27,7 +29,10 @@ struct pvector {
 
 		/* nullable */
 		const char *el_size_name;
-	)
+	);
+
+	// Should be zeroed before hash calculation
+	uint32_t struct_hash;
 };
 
 DSError_t pvector_init(struct pvector *pv, size_t el_size);
@@ -50,7 +55,7 @@ DSError_t pvector_set_debug_info(struct pvector *pv,
 	} while (0)
 
 DSError_t pvector_verify(const struct pvector *pv);
-	
+
 DSError_t pvector_dump(struct pvector *pv, FILE *stream);
 
 #define PVECTOR_DUMP(pv, stream)					\
