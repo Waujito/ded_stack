@@ -11,9 +11,9 @@ FLAGS := $(CXXFLAGS)
 LDFLAGS := -lm
 
 # Uncomment next two lines for C compiler
-OBJCFLAGS := -xc -std=c11
-FLAGS := $(CFLAGS)
-CXX := $(CC)
+# OBJCFLAGS := -xc -std=c11
+# FLAGS := $(CFLAGS)
+# CXX := $(CC)
 
 ifdef USE_GTEST
 override CFLAGS += -DUSE_GTEST
@@ -32,7 +32,7 @@ STATIC_LIB := $(BUILD_DIR)/stack_lib.a
 TESTLIBSRC := test/test_machine.cpp
 TESTLIBOBJ := $(TESTLIBSRC:%.cpp=$(BUILD_DIR)/%.o)
 
-TESTSRC := test/test_pvector.cpp test/test_stack.cpp test/test_crc32.cpp
+TESTSRC := test/test_pvector.cpp test/test_cppvector.cpp test/test_crc32.cpp
 TESTOBJ := $(TESTSRC:%.cpp=$(BUILD_DIR)/%.o)
 TEST_LIB_APP := $(BUILD_DIR)/test_stack
 

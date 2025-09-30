@@ -138,6 +138,7 @@ DSError_t pvector_set_flags(struct pvector *pv, int flags) {
 	return DS_OK;
 }
 
+#ifdef PVECTOR_DEBUG
 DSError_t pvector_set_debug_info(struct pvector *pv,
 				 struct ds_debug debug_info,
 				 const char *el_size_name) {
@@ -151,6 +152,7 @@ DSError_t pvector_set_debug_info(struct pvector *pv,
 	pvector_rehash(pv);
 	return DS_OK;
 }
+#endif
 
 DSError_t pvector_set_element_destructor(struct pvector *pv, pvector_el_destructor_t destructor) {
 	assert (pv);
@@ -262,7 +264,9 @@ DSError_t pvector_set_capacity(struct pvector *pv, size_t new_capacity) {
 		pv->arr += sizeof(PVECTOR_CANARY);
 	}
 
+#ifdef PVECTOR_POISONING
 	size_t old_capacity = pv->capacity;
+#endif
 	pv->capacity = new_capacity;	
 
 	if (IS_PVECTOR_USE_CANARY(pv)) { 
@@ -285,13 +289,20 @@ DSError_t pvector_set_capacity(struct pvector *pv, size_t new_capacity) {
 DSError_t pvector_destroy(struct pvector *pv) {
 	assert (pv);
 	// Should I do something to free the pointer when verification fails?
-	PVECTOR_VERIFY_AND_RETURN(pv);
-
-	if (pv->element_destructor) {
-		for (size_t i = 0; i < pv->len; i++) {
-			pv->element_destructor(pv->arr + i * pv->el_size);
-		}
+#ifdef PVECTOR_DEBUG
+	DSError_t error = pvector_verify(pv);
+	if (error & DS_INVALID_POINTER) {
+		return error;
 	}
+#endif
+
+PVECTOR_ONDEBUG(if (!error) {)
+		if (pv->element_destructor) {
+			for (size_t i = 0; i < pv->len; i++) {
+				pv->element_destructor(pv->arr + i * pv->el_size);
+			}
+		}
+PVECTOR_ONDEBUG(})
 
 	free(pvector_real_ptr(pv));
 	pv->arr = NULL;
@@ -352,18 +363,18 @@ int pvector_has(const struct pvector *pv, size_t idx) {
 	return idx < pv->len;
 }
 
-void *pvector_get(const struct pvector *pv, size_t idx) {
+DSError_t pvector_get(struct pvector *pv, size_t idx, void **dst) {
 	assert (pv);
-
-	if (PVECTOR_VERIFY(pv)) {
-		return NULL;
-	}
+	assert (dst);
+	PVECTOR_VERIFY_AND_RETURN(pv);
 
 	if (idx >= pv->len) {
-		return NULL;
+		return DS_INVALID_ARG;
 	}
 
-	return pv->arr + idx * pv->el_size;
+	*dst = pv->arr + idx * pv->el_size;
+
+	return DS_OK;
 }
 
 #ifdef PVECTOR_POISONING
@@ -383,14 +394,14 @@ static int pvector_el_is_poisonous(const struct pvector *pv, const char *ptr) {
 #endif /* PVECTOR_DEBUG */
 
 
-DSError_t pvector_push_back(struct pvector *pv, void *ptr) {
+DSError_t pvector_push_back(struct pvector *pv, const void *ptr) {
 	assert (pv);
 	assert (ptr);
 	PVECTOR_VERIFY_AND_RETURN(pv);
 
 	// Do not include poisonous elements
 #ifdef PVECTOR_POISONING
-	if (pvector_el_is_poisonous(pv, (char *)ptr)) {
+	if (pvector_el_is_poisonous(pv, (const char *)ptr)) {
 		return DS_POISONED;
 	}
 #endif
@@ -409,16 +420,16 @@ DSError_t pvector_push_back(struct pvector *pv, void *ptr) {
 
 	switch (pv->el_size) {
 		case 1:
-			*el_pos = *(char *)ptr;
+			*el_pos = *(const char *)ptr;
 			break;
 		case 2:
-			*(uint16_t *)el_pos = *(uint16_t *)ptr;
+			*(uint16_t *)el_pos = *(const uint16_t *)ptr;
 			break;
 		case 4:
-			*(uint32_t *)el_pos = *(uint32_t *)ptr;
+			*(uint32_t *)el_pos = *(const uint32_t *)ptr;
 			break;
 		case 8:
-			*(uint64_t *)el_pos = *(uint64_t *)ptr;
+			*(uint64_t *)el_pos = *(const uint64_t *)ptr;
 			break;
 		default:
 			memcpy(el_pos, ptr, pv->el_size);
@@ -426,19 +437,30 @@ DSError_t pvector_push_back(struct pvector *pv, void *ptr) {
 
 	if (IS_PVECTOR_USE_ARRAY_HASH(pv)) {
 		pv->arr_hash = hash_crc32_add(pv->arr_hash,
-				(uint8_t *)ptr, pv->el_size);
+				(const uint8_t *)ptr, pv->el_size);
 	}
 
 	pvector_rehash(pv);
 	return DS_OK;
 }
 
-DSError_t pvector_pop_back(struct pvector *pv) {
+DSError_t pvector_pop_back(struct pvector *pv, void *_Nullable ptr) {
 	assert (pv);
 	PVECTOR_VERIFY_AND_RETURN(pv);
 
+	DSError_t ret = DS_OK;
+
 	if (pv->len == 0) {
 		return DS_INVALID_STATE;
+	}
+
+	void *top = NULL;
+	if ((ret = pvector_get(pv, pv->len - 1, &top))) {
+		return ret;
+	}
+
+	if (ptr) {
+		memcpy(ptr, top, pv->el_size);
 	}
 
 	pv->len--;
@@ -459,9 +481,7 @@ DSError_t pvector_pop_back(struct pvector *pv) {
 
 	pvector_rehash(pv);
 	if (pv->len < pv->capacity / 4 && pv->len > PVECTOR_INIT_CAPACITY) {
-		DSError_t ret = pvector_set_capacity(pv, pv->len);
-
-		if (ret) {
+		if ((ret = pvector_set_capacity(pv, pv->len))) {
 			return ret;
 		}
 	}

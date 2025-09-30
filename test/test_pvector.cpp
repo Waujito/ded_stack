@@ -11,7 +11,7 @@ TEST(PVector, PvectorDumps) {
 
 	uint32_t a = 0xffeedd;
 	ASSERT_EQ((int) pvector_push_back(&pv, &a), 0);
-	ASSERT_EQ((int) pvector_pop_back(&pv), 0);
+	ASSERT_EQ((int) pvector_pop_back(&pv, NULL), 0);
 	ASSERT_EQ((int) pvector_push_back(&pv, &a), 0);
 	// pv.arr[-1] = 1;
 	// ASSERT_EQ((int) pvector_pop_back(&pv), 0);

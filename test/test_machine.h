@@ -183,6 +183,11 @@ struct TypeToPrintfSpec<double> {
 	static constexpr const char *value = tm_t_double_fmt;
 };
 
+template <>
+struct TypeToPrintfSpec<uint32_t> {
+	static constexpr const char *value = tm_t_uint32_t_fmt;
+};
+
 template<typename T>
 static void tm_t_assert_fail_log(T pred, T target,
 				 const char *file_line,
