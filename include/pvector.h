@@ -15,12 +15,16 @@
 	#define PVECTOR_ONDEBUG(...)
 #endif /* PVECTOR_DEBUG */
 
+#define FPVECTOR_USE_CANARY	(1 << 0)
+
 typedef void (*pvector_el_destructor_t)(void *);
 struct pvector {
 	char *arr;
 	size_t capacity;
 	size_t len;
 	size_t el_size;
+
+	int flags;
 
 	pvector_el_destructor_t element_destructor;
 
@@ -36,6 +40,7 @@ struct pvector {
 };
 
 DSError_t pvector_init(struct pvector *pv, size_t el_size);
+DSError_t pvector_set_flags(struct pvector *pv, int flags);
 DSError_t pvector_set_debug_info(struct pvector *pv,
 				 struct ds_debug debug_info,
 				 const char *el_size_name);

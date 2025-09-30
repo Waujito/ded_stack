@@ -5,14 +5,16 @@
 #include "pvector.h"
 
 TEST(PVector, PvectorDumps) {
-	PVECTOR_CREATE(pv, sizeof (uint32_t));
+	PVECTOR_CREATE(pv, sizeof (short));
+	pvector_set_flags(&pv, FPVECTOR_USE_CANARY);
+	pvector_set_capacity(&pv, 13);
 
 	uint32_t a = 0xffeedd;
 	ASSERT_EQ((int) pvector_push_back(&pv, &a), 0);
-	uint32_t *uwu = (uint32_t *)pvector_get(&pv, 0);
-	(*uwu)++;
-	printf("%u\n", *uwu);
-
+	pvector_pop_back(&pv);
+	pvector_pop_back(&pv);
+	ASSERT_EQ((int) pvector_push_back(&pv, &a), 0);
+	// pv.arr[-1] = 1;
 	// ASSERT_EQ((int) pvector_pop_back(&pv), 0);
 	// pv.arr[5] = 0xdd;
 	// (pv.arr) = (char *)100;

@@ -4,21 +4,14 @@
 
 #include "stack.h"
 
-/*
 TEST(Stack, StackDumps) {
 	STACK_CREATE(stk);
 	STACK_DUMP(&stk, stderr);
 	
 	int asfd = 0x11eedd11;
-	stack_push(&stk, asfd);
+	ASSERT_EQ((int)stack_push(&stk, asfd), 0);
+	ASSERT_EQ(stack_top(&stk), asfd);
+	ASSERT_EQ((int)stack_pop(&stk), 0);
 
-	STACK_DUMP(&stk, stderr);
-	stack_destroy(&stk);
+	ASSERT_EQ((int)stack_destroy(&stk), 0);
 }
-
-TEST(Stack, StackDumpRaw) {
-	struct stack stk = {{0}};
-	stack_init(&stk);
-	STACK_DUMP(&stk, stderr);
-}
-*/

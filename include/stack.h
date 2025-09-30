@@ -83,7 +83,7 @@ static DSError_t stack_verify(struct stack *stk) {
 	return pvector_verify(&stk->pv);
 }
 
-static stack_dtype stack_head(struct stack *stk) {
+static stack_dtype stack_top(struct stack *stk) {
 	assert (stk);
 
 	if (stk->pv.len == 0) {

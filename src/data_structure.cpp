@@ -28,6 +28,7 @@ int fprint_DSError(FILE *stream, DSError_t derror) {
 	LOG_DS_ERROR_(DS_STRUCT_CORRUPT,	"Structure Corrupted");
 	LOG_DS_ERROR_(DS_INVALID_POINTER,	"Invalid Pointer");
 	LOG_DS_ERROR_(DS_CANARY_CORRUPT,	"The Canary Corrupted");
+	LOG_DS_ERROR_(DS_STRUCT_HASH_CORRUPT,	"Structure Hash Corrupted");
 
 	#undef LOG_DS_ERROR_
 

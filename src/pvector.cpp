@@ -11,13 +11,14 @@
 static const size_t PVECTOR_INIT_CAPACITY = 128;
 
 // 64 bit for 8-byte alignment
-// SHOULD NOT be used directly in operations because of alignment.
-// Use memcpy and memcmp instead.
+// Alignment is preserved in the backbone of stack allocators
+// Use special canary functions instead of direct access to raw ptr
 static const uint64_t PVECTOR_CANARY = 0xcbdaeffe00;
 
 #ifdef PVECTOR_DEBUG
 #define PVECTOR_POISONING
 #define PVECTOR_DEBUG_LOGGING
+#define PVECTOR_DEBUG_CANARY
 #endif
 
 #ifdef PVECTOR_POISONING
@@ -49,6 +50,8 @@ do {							\
 
 #endif /* PVECTOR_DEBUG */
 
+#define IS_PVECTOR_USE_CANARY(pv) (pv->flags & FPVECTOR_USE_CANARY)
+
 static inline uint32_t pvector_rehash(struct pvector *pv) {
 	pv->struct_hash = 0;
 	uint32_t hash = hash_crc32((const uint8_t *)pv, sizeof(struct pvector));
@@ -71,6 +74,11 @@ DSError_t pvector_init(struct pvector *pv, size_t el_size) {
 	pv->el_size = el_size;
 	pv->capacity = 0;
 	pv->len = 0;
+	pv->flags = 0;
+
+#ifdef PVECTOR_DEBUG_CANARY
+	pv->flags |= FPVECTOR_USE_CANARY;
+#endif
 
 	pv->element_destructor = NULL;
 
@@ -82,6 +90,29 @@ DSError_t pvector_init(struct pvector *pv, size_t el_size) {
 	return DS_OK;
 }
 
+DSError_t pvector_set_flags(struct pvector *pv, int flags) {
+	assert(pv);
+	PVECTOR_VERIFY_AND_RETURN(pv);
+
+	// We can't change canary state if it is already set
+	if (pv->arr) {
+		if (	IS_PVECTOR_USE_CANARY(pv) && 
+			!(flags & FPVECTOR_USE_CANARY)) {
+			return DS_INVALID_ARG;
+		}
+
+		if (	!IS_PVECTOR_USE_CANARY(pv) && 
+			(flags & FPVECTOR_USE_CANARY)) {
+			return DS_INVALID_ARG;
+		}
+	}
+	
+
+	pv->flags = flags;
+
+	pvector_rehash(pv);
+	return DS_OK;
+}
 
 DSError_t pvector_set_debug_info(struct pvector *pv,
 				 struct ds_debug debug_info,
@@ -113,7 +144,45 @@ static inline char *pvector_real_ptr(struct pvector *pv) {
 		return NULL;
 	}
 
-	return pv->arr - sizeof(PVECTOR_CANARY);
+	if (IS_PVECTOR_USE_CANARY(pv)) {
+		return pv->arr - sizeof(PVECTOR_CANARY);
+	} else {
+		return pv->arr;
+	}
+}
+
+static inline uint64_t *starting_canary_ptr(struct pvector *pv) {
+	if (!IS_PVECTOR_USE_CANARY(pv)) {
+		return NULL;
+	}
+
+	return (uint64_t *)pvector_real_ptr(pv);
+}
+
+static inline size_t pad_canary_alignment(size_t carry) {
+	size_t padding_offset = 8 - carry % 8;
+	if (padding_offset == 8) {
+		return 0;
+	}
+
+	return padding_offset;
+}
+
+static inline uint64_t *ending_canary_ptr(struct pvector *pv) {
+	if (!IS_PVECTOR_USE_CANARY(pv)) {
+		return NULL;
+	}
+
+	char *real_ptr = pvector_real_ptr(pv);
+	if (real_ptr == NULL) {
+		return NULL;
+	}
+
+	real_ptr += sizeof(PVECTOR_CANARY);
+	real_ptr += pv->capacity * pv->el_size;
+	real_ptr += pad_canary_alignment((uintptr_t)real_ptr % 8);
+
+	return (uint64_t *)real_ptr;
 }
 
 /**
@@ -121,17 +190,20 @@ static inline char *pvector_real_ptr(struct pvector *pv) {
  * Note that it works out of bounds of the pvector->arr:
  * _CANARY_ (pv->arr + pv->capacity) _CANARY_
  */
-static void pvector_set_canaries(struct pvector *pv) {
+static inline void pvector_set_canaries(struct pvector *pv) {
 	assert(pv);
+
+	if (!IS_PVECTOR_USE_CANARY(pv)) {
+		return;
+	}
 
 	char *real_ptr = pvector_real_ptr(pv);
 	if (!real_ptr) {
 		return;
 	}
 
-	memcpy(real_ptr, &PVECTOR_CANARY, sizeof(PVECTOR_CANARY));
-	memcpy(real_ptr + sizeof(PVECTOR_CANARY) + pv->capacity * pv->el_size,
-		&PVECTOR_CANARY, sizeof(PVECTOR_CANARY));
+	*starting_canary_ptr(pv) = PVECTOR_CANARY;
+	*ending_canary_ptr(pv) = PVECTOR_CANARY;
 }
 
 DSError_t pvector_set_capacity(struct pvector *pv, size_t new_capacity) {
@@ -149,18 +221,29 @@ DSError_t pvector_set_capacity(struct pvector *pv, size_t new_capacity) {
 	pv_log_debug("Setting capacity %zu for vector of len %zu\n", 
 		new_capacity, pv->len);
 
-	char *new_arr = (char *)realloc(pvector_real_ptr(pv), 
-		new_capacity * pv->el_size + 2 * sizeof(PVECTOR_CANARY));
+	size_t realloc_size = new_capacity * pv->el_size;
+	if (IS_PVECTOR_USE_CANARY(pv)) {
+		realloc_size += sizeof(PVECTOR_CANARY);
+		realloc_size += sizeof(PVECTOR_CANARY);
+		realloc_size += pad_canary_alignment(realloc_size);
+	}
+
+	char *new_arr = (char *)realloc(pvector_real_ptr(pv), realloc_size);
 	if (!new_arr) {
 		return DS_ALLOCATION;
 	}
 
-	pv->arr = new_arr + sizeof(PVECTOR_CANARY);
+	pv->arr = new_arr;
+	if (IS_PVECTOR_USE_CANARY(pv)) { 
+		pv->arr += sizeof(PVECTOR_CANARY);
+	}
 
 	size_t old_capacity = pv->capacity;
 	pv->capacity = new_capacity;	
 
-	pvector_set_canaries(pv);
+	if (IS_PVECTOR_USE_CANARY(pv)) { 
+		pvector_set_canaries(pv);
+	}
 
 #ifdef PVECTOR_POISONING
 	if (old_capacity < new_capacity) {
@@ -191,6 +274,7 @@ DSError_t pvector_destroy(struct pvector *pv) {
 	pv->capacity = 0;
 	pv->len = 0;
 	pv->element_destructor = NULL;
+	pv->flags = 0;
 
 	pvector_rehash(pv);
 	return DS_OK;
@@ -201,18 +285,30 @@ DSError_t pvector_clone(struct pvector *npv, const struct pvector *pv) {
 	assert (pv);
 	PVECTOR_VERIFY_AND_RETURN(pv);
 
-	char *arr = (char *)calloc(pv->len * pv->el_size + 2 * sizeof(PVECTOR_CANARY), 
-					sizeof(char));
+	size_t calloc_size = pv->len * pv->el_size;
+	if (IS_PVECTOR_USE_CANARY(pv)) {
+		calloc_size += 2 * sizeof(PVECTOR_CANARY);
+		calloc_size += pad_canary_alignment(calloc_size);
+	}
+
+	char *arr = (char *)calloc(calloc_size, sizeof(char));
 	if (!arr) {
 		return DS_ALLOCATION;
 	}
 
-	npv->arr = arr + sizeof(PVECTOR_CANARY);
+	npv->arr = arr;
+
+	if (IS_PVECTOR_USE_CANARY(pv)) {
+		arr += sizeof(PVECTOR_CANARY);
+	}
+
 	npv->len = pv->len;
 	npv->capacity = pv->len;
 	npv->el_size = pv->el_size;
 
-	pvector_set_canaries(npv);
+	if (IS_PVECTOR_USE_CANARY(pv)) {
+		pvector_set_canaries(npv);
+	}
 
 	memcpy(npv->arr, pv->arr, pv->len * pv->el_size);
 
@@ -283,7 +379,23 @@ DSError_t pvector_push_back(struct pvector *pv, void *ptr) {
 
 	size_t idx = pv->len++;
 	char *el_pos = pv->arr + idx * pv->el_size;
-	memcpy(el_pos, ptr, pv->el_size);
+
+	switch (pv->el_size) {
+		case 1:
+			*el_pos = *(char *)ptr;
+			break;
+		case 2:
+			*(uint16_t *)el_pos = *(uint16_t *)ptr;
+			break;
+		case 4:
+			*(uint32_t *)el_pos = *(uint32_t *)ptr;
+			break;
+		case 8:
+			*(uint64_t *)el_pos = *(uint64_t *)ptr;
+			break;
+		default:
+			memcpy(el_pos, ptr, pv->el_size);
+	}
 
 	pvector_rehash(pv);
 	return DS_OK;
@@ -328,7 +440,7 @@ DSError_t pvector_verify(const struct pvector *pv) {
 	size_t last_bit_pos = sizeof(size_t) * 8 - 2;
 
 	if (!pvector_hash_validate(pv)) {
-		error |= DS_STRUCT_CORRUPT;
+		error |= DS_STRUCT_HASH_CORRUPT;
 	}
 
 	if (pv->capacity >> last_bit_pos) {
@@ -346,14 +458,22 @@ DSError_t pvector_verify(const struct pvector *pv) {
 	}
 
 	// Test for Canary
-	const char *real_ptr = pvector_real_ptr((struct pvector *)pv);
-	if (real_ptr && (
-		!(error & (DS_STRUCT_CORRUPT | DS_INVALID_POINTER))
-	)) {
-		if (	memcmp(real_ptr, &PVECTOR_CANARY, sizeof(PVECTOR_CANARY)) ||
-			memcmp(real_ptr + sizeof(PVECTOR_CANARY) + pv->capacity * pv->el_size, 
-				&PVECTOR_CANARY, sizeof(PVECTOR_CANARY))) {
-			error |= DS_CANARY_CORRUPT;
+	if (IS_PVECTOR_USE_CANARY(pv)) {
+		const char *real_ptr = pvector_real_ptr((struct pvector *)pv);
+		if (real_ptr && (
+			!(error & (DS_STRUCT_CORRUPT | DS_INVALID_POINTER))
+		)) {
+			uint64_t *start_canary = 
+				starting_canary_ptr((struct pvector *)pv);
+			uint64_t *end_canary = 
+				ending_canary_ptr((struct pvector *)pv);
+
+			if (	(start_canary && *start_canary != 
+					PVECTOR_CANARY) ||
+				(end_canary && *end_canary != 
+					PVECTOR_CANARY)) {
+				error |= DS_CANARY_CORRUPT;
+			}
 		}
 	}
 
@@ -460,10 +580,10 @@ DSError_t pvector_dump(struct pvector *pv, FILE *stream) {
 		fprintf(stream, "\t\t(EMPTY)\n");
 	}
 
-	char *real_ptr = pvector_real_ptr(pv);
-	if (real_ptr) {
+	uint64_t *start_canary = starting_canary_ptr(pv);
+	if (start_canary) {
 		fprintf(stream, "\t[BCANARY]\t=");
-		pvector_dump_canary(stream, (unsigned char *)real_ptr);
+		pvector_dump_canary(stream, (unsigned char *)start_canary);
 	}
 
 	for (size_t i = 0; i < contents_len; i++) {
@@ -499,10 +619,10 @@ DSError_t pvector_dump(struct pvector *pv, FILE *stream) {
 		fprintf(stream, "\t\t[truncated]\n");
 	}
 
-	if (real_ptr) {
+	uint64_t *end_canary = ending_canary_ptr(pv);
+	if (end_canary) {
 		fprintf(stream, "\t[ECANARY]\t=");
-		pvector_dump_canary(stream, (unsigned char *)real_ptr + 
-			sizeof(PVECTOR_CANARY) + pv->capacity * pv->el_size);
+		pvector_dump_canary(stream, (unsigned char *)end_canary);
 	}
 
 	fprintf(stream, "\t}\n");
