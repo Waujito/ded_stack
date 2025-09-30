@@ -10,6 +10,7 @@
 
 #ifndef _Nullable
 #define _Nullable
+#define PV_Nullable_
 #endif
 
 #define PVECTOR_DEBUG
@@ -212,6 +213,9 @@ public:
 
 #endif /* __cplusplus */
 
-// #undef _Nullable
+#ifdef PV_Nullable_
+#undef _Nullable
+#undef PV_Nullable_
+#endif
 
 #endif /* PVECTOR_H */

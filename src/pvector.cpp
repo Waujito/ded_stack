@@ -444,7 +444,7 @@ DSError_t pvector_push_back(struct pvector *pv, const void *ptr) {
 	return DS_OK;
 }
 
-DSError_t pvector_pop_back(struct pvector *pv, void *_Nullable ptr) {
+DSError_t pvector_pop_back(struct pvector *pv, void *ptr) {
 	assert (pv);
 	PVECTOR_VERIFY_AND_RETURN(pv);
 
