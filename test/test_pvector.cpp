@@ -6,13 +6,12 @@
 
 TEST(PVector, PvectorDumps) {
 	PVECTOR_CREATE(pv, sizeof (short));
-	pvector_set_flags(&pv, FPVECTOR_USE_CANARY);
+	pvector_set_flags(&pv, FPVECTOR_USE_CANARY | FPVECTOR_USE_ARRAY_HASH);
 	pvector_set_capacity(&pv, 13);
 
 	uint32_t a = 0xffeedd;
 	ASSERT_EQ((int) pvector_push_back(&pv, &a), 0);
-	pvector_pop_back(&pv);
-	pvector_pop_back(&pv);
+	ASSERT_EQ((int) pvector_pop_back(&pv), 0);
 	ASSERT_EQ((int) pvector_push_back(&pv, &a), 0);
 	// pv.arr[-1] = 1;
 	// ASSERT_EQ((int) pvector_pop_back(&pv), 0);
@@ -23,6 +22,10 @@ TEST(PVector, PvectorDumps) {
 
 	PVECTOR_DUMP(&pv, stderr);
 
+	pv.arr[0] = 0x11;
+	PVECTOR_DUMP(&pv, stderr);
+	ASSERT_EQ((int) pvector_verify(&pv), (int)DS_ARRAY_HASH_CORRUPT);
+	pv.arr[0] = 0xdd;
 	ASSERT_EQ((int) pvector_verify(&pv), 0);
 
 	pvector_destroy(&pv);

@@ -62,6 +62,7 @@ enum DSError {
 	DS_INVALID_POINTER	= 1 << 5,
 	DS_CANARY_CORRUPT	= 1 << 6,
 	DS_STRUCT_HASH_CORRUPT	= 1 << 7,
+	DS_ARRAY_HASH_CORRUPT	= 1 << 8,
 }; 
 
 typedef unsigned int DSError_t;

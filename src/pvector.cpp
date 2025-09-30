@@ -13,12 +13,14 @@ static const size_t PVECTOR_INIT_CAPACITY = 128;
 // 64 bit for 8-byte alignment
 // Alignment is preserved in the backbone of stack allocators
 // Use special canary functions instead of direct access to raw ptr
-static const uint64_t PVECTOR_CANARY = 0xcbdaeffe00;
+static const uint64_t PVECTOR_CANARY = 0x00edac0ffe00UL;
 
 #ifdef PVECTOR_DEBUG
 #define PVECTOR_POISONING
 #define PVECTOR_DEBUG_LOGGING
 #define PVECTOR_DEBUG_CANARY
+
+#define PVECTOR_DEBUG_ARRAY_HASH
 #endif
 
 #ifdef PVECTOR_POISONING
@@ -51,8 +53,11 @@ do {							\
 #endif /* PVECTOR_DEBUG */
 
 #define IS_PVECTOR_USE_CANARY(pv) (pv->flags & FPVECTOR_USE_CANARY)
+#define IS_PVECTOR_USE_ARRAY_HASH(pv) (pv->flags & FPVECTOR_USE_ARRAY_HASH)
 
 static inline uint32_t pvector_rehash(struct pvector *pv) {
+	assert (pv);
+
 	pv->struct_hash = 0;
 	uint32_t hash = hash_crc32((const uint8_t *)pv, sizeof(struct pvector));
 	pv->struct_hash = hash;
@@ -60,10 +65,18 @@ static inline uint32_t pvector_rehash(struct pvector *pv) {
 	return hash;
 }
 static int pvector_hash_validate(const struct pvector *pv) {
+	assert (pv);
+
 	struct pvector npv = *pv;
 	pvector_rehash(&npv);
 
 	return pv->struct_hash == npv.struct_hash;
+}
+
+static inline uint32_t pvector_array_hash(const struct pvector *pv) {
+	assert (pv);
+
+	return hash_crc32((const uint8_t *)pv->arr, pv->len * pv->el_size);
 }
 
 DSError_t pvector_init(struct pvector *pv, size_t el_size) {
@@ -80,7 +93,13 @@ DSError_t pvector_init(struct pvector *pv, size_t el_size) {
 	pv->flags |= FPVECTOR_USE_CANARY;
 #endif
 
+#ifdef PVECTOR_DEBUG_ARRAY_HASH
+	pv->flags |= FPVECTOR_USE_ARRAY_HASH;
+#endif
+
 	pv->element_destructor = NULL;
+
+	pv->arr_hash = 0;
 
 	PVECTOR_ONDEBUG(
 		pv->_debug_info = (struct ds_debug){0};
@@ -104,6 +123,11 @@ DSError_t pvector_set_flags(struct pvector *pv, int flags) {
 		if (	!IS_PVECTOR_USE_CANARY(pv) && 
 			(flags & FPVECTOR_USE_CANARY)) {
 			return DS_INVALID_ARG;
+		}
+
+		if (!IS_PVECTOR_USE_ARRAY_HASH(pv) &&
+			flags & FPVECTOR_USE_ARRAY_HASH) {
+			pv->arr_hash = pvector_array_hash(pv);
 		}
 	}
 	
@@ -276,6 +300,8 @@ DSError_t pvector_destroy(struct pvector *pv) {
 	pv->element_destructor = NULL;
 	pv->flags = 0;
 
+	pv->arr_hash = 0;
+
 	pvector_rehash(pv);
 	return DS_OK;
 }
@@ -305,6 +331,7 @@ DSError_t pvector_clone(struct pvector *npv, const struct pvector *pv) {
 	npv->len = pv->len;
 	npv->capacity = pv->len;
 	npv->el_size = pv->el_size;
+	npv->arr_hash = pv->arr_hash;
 
 	if (IS_PVECTOR_USE_CANARY(pv)) {
 		pvector_set_canaries(npv);
@@ -397,6 +424,11 @@ DSError_t pvector_push_back(struct pvector *pv, void *ptr) {
 			memcpy(el_pos, ptr, pv->el_size);
 	}
 
+	if (IS_PVECTOR_USE_ARRAY_HASH(pv)) {
+		pv->arr_hash = hash_crc32_add(pv->arr_hash,
+				(uint8_t *)ptr, pv->el_size);
+	}
+
 	pvector_rehash(pv);
 	return DS_OK;
 }
@@ -410,6 +442,11 @@ DSError_t pvector_pop_back(struct pvector *pv) {
 	}
 
 	pv->len--;
+
+	// Do something with this stupid O(n)
+	if (IS_PVECTOR_USE_ARRAY_HASH(pv)) {
+		pv->arr_hash = pvector_array_hash(pv);
+	}
 
 #ifdef PVECTOR_POISONING
 	memset(pv->arr + pv->len * pv->el_size, PVECTOR_DEBUG_POISON, pv->el_size);
@@ -474,6 +511,15 @@ DSError_t pvector_verify(const struct pvector *pv) {
 					PVECTOR_CANARY)) {
 				error |= DS_CANARY_CORRUPT;
 			}
+		}
+	}
+
+	// Test for array hash
+	if (IS_PVECTOR_USE_ARRAY_HASH(pv) && 
+		!(error & (DS_STRUCT_CORRUPT | DS_INVALID_POINTER))) {
+		uint32_t real_hash = pvector_array_hash(pv);
+		if (real_hash != pv->arr_hash) {
+			error |= DS_ARRAY_HASH_CORRUPT;
 		}
 	}
 

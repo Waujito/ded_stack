@@ -90,7 +90,12 @@ static stack_dtype stack_top(struct stack *stk) {
 		return 0;
 	}
 
-	return *(stack_dtype *)pvector_get(&stk->pv, stk->pv.len - 1);
+	stack_dtype *ret = (stack_dtype *)pvector_get(&stk->pv, stk->pv.len - 1);
+	if (!ret) {
+		return 0;
+	}
+
+	return *(stack_dtype *)ret;
 }
 
 #ifdef STACK_DEBUG

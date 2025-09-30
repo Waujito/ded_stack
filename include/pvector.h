@@ -16,6 +16,7 @@
 #endif /* PVECTOR_DEBUG */
 
 #define FPVECTOR_USE_CANARY	(1 << 0)
+#define FPVECTOR_USE_ARRAY_HASH	(1 << 1)
 
 typedef void (*pvector_el_destructor_t)(void *);
 struct pvector {
@@ -34,6 +35,8 @@ struct pvector {
 		/* nullable */
 		const char *el_size_name;
 	);
+
+	uint32_t arr_hash;
 
 	// Should be zeroed before hash calculation
 	uint32_t struct_hash;
