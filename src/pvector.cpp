@@ -288,21 +288,18 @@ DSError_t pvector_set_capacity(struct pvector *pv, size_t new_capacity) {
 
 DSError_t pvector_destroy(struct pvector *pv) {
 	assert (pv);
-	// Should I do something to free the pointer when verification fails?
-#ifdef PVECTOR_DEBUG
-	DSError_t error = pvector_verify(pv);
+	DSError_t error = PVECTOR_VERIFY(pv); 
 	if (error & DS_INVALID_POINTER) {
 		return error;
 	}
-#endif
 
-PVECTOR_ONDEBUG(if (!error) {)
+	if (!error) {
 		if (pv->element_destructor) {
 			for (size_t i = 0; i < pv->len; i++) {
 				pv->element_destructor(pv->arr + i * pv->el_size);
 			}
 		}
-PVECTOR_ONDEBUG(})
+	}
 
 	free(pvector_real_ptr(pv));
 	pv->arr = NULL;
@@ -313,7 +310,6 @@ PVECTOR_ONDEBUG(})
 
 	pv->arr_hash = 0;
 
-	pvector_rehash(pv);
 	return DS_OK;
 }
 
@@ -418,22 +414,7 @@ DSError_t pvector_push_back(struct pvector *pv, const void *ptr) {
 	size_t idx = pv->len++;
 	char *el_pos = pv->arr + idx * pv->el_size;
 
-	switch (pv->el_size) {
-		case 1:
-			*el_pos = *(const char *)ptr;
-			break;
-		case 2:
-			*(uint16_t *)el_pos = *(const uint16_t *)ptr;
-			break;
-		case 4:
-			*(uint32_t *)el_pos = *(const uint32_t *)ptr;
-			break;
-		case 8:
-			*(uint64_t *)el_pos = *(const uint64_t *)ptr;
-			break;
-		default:
-			memcpy(el_pos, ptr, pv->el_size);
-	}
+	memcpy(el_pos, ptr, pv->el_size);
 
 	if (IS_PVECTOR_USE_ARRAY_HASH(pv)) {
 		pv->arr_hash = hash_crc32_add(pv->arr_hash,

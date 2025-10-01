@@ -25,6 +25,7 @@
 #define FPVECTOR_USE_ARRAY_HASH	(1 << 1)
 
 typedef void (*pvector_el_destructor_t)(void *);
+
 struct pvector {
 	char *arr;
 	size_t capacity;
@@ -97,6 +98,7 @@ DSError_t pvector_clone(struct pvector *npv, const struct pvector *pv);
 
 int pvector_has(const struct pvector *pv, size_t idx);
 DSError_t pvector_get(struct pvector *pv, size_t idx, void **dst);
+
 static inline DSError_t pvector_top(struct pvector *pv, void **dst) {
 	if (pv->len > 0) {
 		return pvector_get(pv, pv->len - 1, dst);
